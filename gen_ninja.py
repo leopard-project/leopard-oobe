@@ -1,21 +1,33 @@
 #!/usr/bin/env python3
-"""leopard-oobe 构建：消费 ../leopard-sdk 的 obj-tui + include，输出 out/leopard-oobe.elf。"""
+"""leopard-oobe 构建 + xbps 打包（build / pack 两个 target）。"""
 import os
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent          # leopard-oobe/
-SDK  = ROOT / ".." / "leopard-sdk"              # SDK 根（目录名若不同，改这一行）
+SDK  = ROOT / ".." / "leopard-sdk"              # SDK 根（目录名若不同，改这里）
 INC  = SDK / "include"
 OBJ  = SDK / "obj-tui"
 OUT  = ROOT / "out"
 
-
 SOURCES = ["main.c"]
 TARGET  = OUT / "leopard-oobe.elf"
 
+# SDK 运行时，链接顺序：crt0 入口 → 运行时 → 应用 → liballoc
 RUNTIME  = ["crt0.o", "libsys.cpp.o", "xgui_stubs.cpp.o",
             "constart.cpp.o", "xtuiapi.cpp.o", "krlibc.cpp.o"]
 LIBALLOC = OBJ / "liballoc-x86_64.a"
+
+# ---- xbps 包配置 ----
+# install/data 均为相对 / 的安装路径（无前导斜杠）
+PKG = {
+    "pkgname": "leopard-oobe",
+    "pkgver":  "1.0_1",
+    "arch":    "x86_64",
+    "desc":    "Leopard first-boot setup",
+    "deps":    "",
+    "install": "apps/leopard/leopard-oobe.elf",
+    "data":    [],
+}
 
 
 def rel(p):
@@ -32,6 +44,31 @@ def esc(p):
     return rel(p).replace("$", "$$").replace(":", "$:").replace(" ", "$ ")
 
 
+def emit_package(L, pkg, target):
+    inst = pkg["install"]
+    data = pkg.get("data", [])
+    out  = OUT / f"{pkg['pkgname']}-{pkg['pkgver']}.{pkg['arch']}.xbps"
+
+    args = f"-A {pkg['arch']} -n {pkg['pkgname']}-{pkg['pkgver']} -s \"{pkg['desc']}\""
+    if pkg.get("deps"):
+        args += f" -D \"{pkg['deps']}\""
+
+    files = [(target, inst)] + [(ROOT / s, d) for s, d in data]
+
+    # 一个 package 规则：先 stage 全部文件到 .pkg/，再 cd out 运行 xbps-create
+    # （xbps-create 无 -o，输出到 CWD，自动命名 <pkgver>.<arch>.xbps）
+    cmd = "rm -rf .pkg"
+    for src, dst in files:
+        cmd += f" && mkdir -p .pkg/$$(dirname {dst}) && cp {esc(src)} .pkg/{dst}"
+    cmd += f" && cd out && xbps-create --compression gzip {args} ../.pkg"
+
+    L += ["rule package", f"  command = {cmd}", ""]
+    L += [f"build {esc(out)}: package {' '.join(esc(s) for s, _ in files)}"]
+    L += [f"build build: phony {esc(target)}"]
+    L += [f"build pack: phony {esc(out)}"]
+    L += ["default build"]
+
+
 def main():
     cc   = os.environ.get("CC",  "clang")
     cxx  = os.environ.get("CXX", "clang++")
@@ -44,8 +81,7 @@ def main():
     c_flags   = f"{common} -std=c11   -I {rel(INC)} -I . -MMD -MP"
     cpp_flags = f"{common} -std=c++11 -I {rel(INC)} -I . -Wno-write-strings -MMD -MP"
 
-    L = ["# leopard-oobe 构建（消费 ../leopard-sdk）",
-         "ninja_required_version = .10",
+    L = ["# leopard-oobe 构建 + xbps 打包", "ninja_required_version = 1.10",
          f"cc = {cc}", f"cxx = {cxx}", f"ld = {ld}",
          f"c_flags = {c_flags}", f"cpp_flags = {cpp_flags}", ""]
     L += [
@@ -69,13 +105,14 @@ def main():
 
     ins = [OBJ / n for n in RUNTIME] + app_objs + [LIBALLOC]
     L += [f"build {esc(TARGET)}: link {' '.join(esc(o) for o in ins)}", ""]
-    L += ["build all: phony " + esc(TARGET), "default all", ""]
-    L += ["rule clean", "  command = rm -rf out", "build clean: clean"]
+
+    emit_package(L, PKG, TARGET)
+
+    L += ["rule clean", "  command = rm -rf out .pkg", "build clean: clean"]
 
     (ROOT / "build.ninja").write_text("\n".join(L) + "\n", encoding="utf-8")
-    print("已生成 build.ninja（leopard-oobe）。构建：ninja")
+    print("已生成 build.ninja（leopard-oobe）。用法：ninja build / ninja pack")
 
 
 if __name__ == "__main__":
     main()
-
