@@ -1,6 +1,10 @@
 #include "xtuiapi.h"   /* xapi_* / WSTR；libsys.h：enter_syscall / XAPI_INPUT_NO_ECHO */
 
-#define USER_CAP 64
+#define USER_CAP      64
+#define CONFIG_CAP    512
+#define PATH_CAP      256
+#define DEFAULT_SHELL "/apps/system/lpsh.elf"
+#define DEFAULT_PATH  "/apps/system:/apps/leopard"
 
 static inline void read_line(char *buf, size_t cap, uint64_t flags)
 {
@@ -22,7 +26,7 @@ int main(int argc, char *argv[], char *envp[])
     (void)argv;
     (void)envp;
 
-    xapi_Printf("LeopardOobe: first boot setup\n");
+    xapi_Printf("Leopard OOBE: first boot setup\n");
 
     char username[USER_CAP];
     char password[USER_CAP];
@@ -37,11 +41,26 @@ int main(int argc, char *argv[], char *envp[])
     wipe(password, sizeof(password));
 
     if (result != 0) {
-        xapi_Printf("LeopardOobe: account setup failed\n");
+        xapi_Printf("Leopard OOBE: account setup failed\n");
         return 1;   /* 退出 → respawn getty → 仍需要 OOBE → 重进 */
     }
 
-    xapi_Printf("LeopardOobe: account created\n");
+    /* 建号成功后，把 shell / path 两个环境变量写进 /users/<用户名>/config */
+    char config_path[PATH_CAP];
+    snprintf(config_path, sizeof(config_path), "/users/%s/config", username);
+
+    char config[CONFIG_CAP];
+    snprintf(config, sizeof(config),
+             "shell=%s\n"
+             "path=%s\n",
+             DEFAULT_SHELL, DEFAULT_PATH);
+
+    int64_t wrote = (int64_t)xapi_WriteFile((WSTR)config_path, config, strlen(config), 0);
+    if (wrote <= 0) {
+        xapi_Printf("Leopard OOBE: failed to write user config\n");
+        return 1;
+    }
+
+    xapi_Printf("Leopard OOBE: account created\n");
     return 0;       /* 退出 → respawn getty → 已完成 OOBE → 进登录 */
 }
-
