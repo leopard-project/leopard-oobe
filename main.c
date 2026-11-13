@@ -1,4 +1,9 @@
-#include "xtuiapi.h"   /* xapi_* / WSTR；libsys.h：enter_syscall / XAPI_INPUT_NO_ECHO */
+#include "xtuiapi.h"   /* xapi_* / WSTR；libsys.h：enter_syscall */
+
+/* XACT 2026v5 头文件删除了该宏，但内核 XAPI_INPUT 仍支持 flags=0x1（不回显）。 */
+#ifndef XAPI_INPUT_NO_ECHO
+#define XAPI_INPUT_NO_ECHO 0x1
+#endif
 
 #define USER_CAP      64
 #define CONFIG_CAP    512
