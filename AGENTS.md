@@ -1,6 +1,7 @@
 # PROJECT KNOWLEDGE BASE — leopard-oobe
 
-首次启动建号（out-of-box experience）。建号后初始化 `/home/<user>/.config/` 并写默认 `shell.conf`。
+首次启动建号（out-of-box experience）。建号后初始化 `/users/<user>/`，并写
+`/users/<user>/config`（`shell=` / `path=`）。主目录约定是 `/users`，不建 `/home`。
 
 ## 构建
     python3 gen_ninja.py && ninja build   # → out/leopard-oobe.elf
